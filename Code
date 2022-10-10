@@ -1,0 +1,176 @@
+import PySimpleGUI as sg
+import os
+import win32com.client as win32
+
+from datetime import datetime
+
+now = datetime.now()  # current date and time
+
+date_email = now.strftime("%B %Y")
+sg.theme('DarkTeal9')
+
+layout = [
+    [sg.Text('Please fill out the following fields:')],
+    [sg.Text('Excel File:', size=(15, 1)), sg.InputText(), sg.FileBrowse()],
+    [sg.Text('Word Template:', size=(15, 1)), sg.InputText(), sg.FileBrowse()],
+    [sg.Text('PDF Save Location:', size=(15, 1)), sg.InputText(), sg.FolderBrowse()],
+    [sg.Checkbox('Send Email?', size=12), sg.Text('Key Word:', size=(10, 1)),
+     sg.InputText(key='key_word', size=(32, 1))],
+    [sg.Submit(), sg.Exit()]
+]
+
+email_layout = [
+    [sg.Text('Enter Email Text')],
+    [sg.Multiline(size=(50, 10))], [sg.Checkbox('Display Email')], [sg.Checkbox('Send Email')],
+    [sg.Button(button_text='Submit')]
+
+]
+
+# construct Outlook application instance
+
+
+window = sg.Window('Mail Merge Pro', layout)
+email_window = sg.Window('Send Email With PDF Attachment', email_layout)
+
+while True:
+    event, values = window.read()
+    xl_file1 = str(values[0])
+    xl_file = xl_file1.replace('/', '\\')
+    word_temp1 = str(values[1])
+    word_temp = word_temp1.replace('/', '\\')
+    save_location1 = str(values[2])
+    save_location = save_location1.replace('/', '\\')
+    email = str(values[3])
+    destination_folder = save_location
+    key_word = str(values['key_word'])
+
+    if event == sg.WIN_CLOSED or event == 'Exit':
+        break
+    if event == 'Submit':
+        try:
+            if email == 'True':
+                event, values = email_window.read()
+                email_body = values[0]
+                display_email = str(values[1])
+                send_email = str(values[2])
+
+                if event == 'Submit':
+                    email_window.close()
+
+                    # Create a Word application Instance
+
+                wordApp = win32.Dispatch('Word.Application')
+                wordApp.Visible = True
+
+                # Word Template
+
+                sourceDoc = wordApp.Documents.Open(os.path.join(word_temp))
+                mail_merge = sourceDoc.MailMerge
+                mail_merge.OpenDataSource(Name := os.path.join(xl_file), sqlstatement := "SELECT * FROM [Sheet1$]")
+
+                record_count = mail_merge.DataSource.RecordCount
+
+                # Start Mail merge
+
+                for i in range(1, record_count + 1):
+                    mail_merge.DataSource.ActiveRecord = i
+                    mail_merge.DataSource.FirstRecord = i
+                    mail_merge.DataSource.LastRecord = i
+
+                    mail_merge.Destination = 0
+                    mail_merge.Execute(False)
+
+                    # Get Record Value
+                    targetDoc = wordApp.ActiveDocument
+
+                    base_name = mail_merge.DataSource.DataFields(key_word.replace(' ', '_')).Value
+                    email_address = mail_merge.DataSource.DataFields('email addresses'.replace(' ', '_')).Value
+                    if base_name == '':
+                        targetDoc.Close(False)
+                        targetDoc = None
+                        continue
+                        # Save PDF
+
+                    targetDoc.SaveAs(os.path.join(destination_folder, base_name + '.pdf'), 17)
+
+                    # Close File
+
+                    targetDoc.Close(False)
+                    targetDoc = None
+
+                    # construct Outlook application instance
+                    olApp = win32.Dispatch('Outlook.Application')
+                    olNS = olApp.GetNameSpace('MAPI')
+
+                    # construct the email item object
+                    mailItem = olApp.CreateItem(0)
+
+                    mailItem.Subject = date_email + ' Rebate - ' + 'Credit Note ' + base_name
+                    mailItem.BodyFormat = 1
+                    mailItem.Body = email_body
+                    mailItem.To = email_address
+
+                    mailItem.Attachments.Add(os.path.join(save_location, base_name + '.pdf'))
+
+                    if display_email == 'True':
+                        mailItem.Display()
+                    elif send_email == 'True':
+                        mailItem.Save()
+                        mailItem.Send()
+                    else:
+                        sg.Popup('Select Send Or Display')
+                sourceDoc.Close(False)
+            elif email == 'False':
+
+                # Create a Word application Instance
+
+                wordApp = win32.Dispatch('Word.Application')
+                wordApp.Visible = True
+
+                # Word Template
+
+                sourceDoc = wordApp.Documents.Open(os.path.join(word_temp))
+                mail_merge = sourceDoc.MailMerge
+                mail_merge.OpenDataSource(Name := os.path.join(xl_file), sqlstatement := "SELECT * FROM [Sheet1$]")
+
+                record_count = mail_merge.DataSource.RecordCount
+
+                # Start Mail merge
+
+                for i in range(1, record_count + 1):
+                    mail_merge.DataSource.ActiveRecord = i
+                    mail_merge.DataSource.FirstRecord = i
+                    mail_merge.DataSource.LastRecord = i
+
+                    mail_merge.Destination = 0
+                    mail_merge.Execute(False)
+
+                    # Get Record Value
+                    targetDoc = wordApp.ActiveDocument
+
+                    base_name = mail_merge.DataSource.DataFields(key_word.replace(' ', '_')).Value
+                    if base_name == '':
+                        targetDoc.Close(False)
+                        targetDoc = None
+                        continue
+
+                        # Save PDF
+
+                    targetDoc.SaveAs(os.path.join(destination_folder, base_name + '.pdf'), 17)
+
+                    # Close File
+
+                    os.startfile(save_location)
+                    targetDoc.Close(False)
+                    targetDoc = None
+
+                sourceDoc.MailMerge.MainDocumentType = -1
+                sourceDoc.Close(True)
+                sourceDoc = None
+        except TimeoutError:
+
+            sg.popup('Timed Out')
+
+window.close()
+
+
